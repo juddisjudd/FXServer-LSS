@@ -12,7 +12,7 @@ This repository contains a shell script (`fxserver-setup.sh`) that automates the
 ### Installation
 1. Download the script:
 ```bash
-curl -sSL https://raw.githubusercontent.com/yourusername/FXServer-LSS/main/fxserver-setup.sh -o fxserver-setup.sh
+curl -sSL https://raw.githubusercontent.com/juddisjudd/FXServer-LSS/refs/heads/main/fxserver-setup.sh -o fxserver-setup.sh
 chmod +x fxserver-setup.sh
 ```
 2. Run the script:
