@@ -127,15 +127,18 @@ if gum confirm "Installation complete. Do you want to start the FXServer now?"; 
   echo "Starting FXServer..."
   cd "$SERVER_DIR/server-data" || exit 1
   if [ "$TXADMIN" = "yes" ]; then
-    bash "$SERVER_DIR/server/run.sh" +exec server.cfg +set txAdminPort 40121
+    # Launch in screen (txAdmin requires monitor mode; do not use +exec)
+    screen -dmS FXServer "$SERVER_DIR/server/run.sh" +set serverProfile FXServer +set txAdminPort 40121
   else
+    # Launch normally with server.cfg loaded
     bash "$SERVER_DIR/server/run.sh" +exec server.cfg
   fi
 else
   echo "Setup complete. To start your server later, run:"
   if [ "$TXADMIN" = "yes" ]; then
-    echo "cd \"$SERVER_DIR/server-data\" && bash \"$SERVER_DIR/server/run.sh\" +exec server.cfg +set txAdminPort 40121"
+    echo "cd \"$SERVER_DIR/server-data\" && screen -dmS FXServer \"$SERVER_DIR/server/run.sh\" +set serverProfile FXServer +set txAdminPort 40121"
   else
     echo "cd \"$SERVER_DIR/server-data\" && bash \"$SERVER_DIR/server/run.sh\" +exec server.cfg"
   fi
 fi
+
