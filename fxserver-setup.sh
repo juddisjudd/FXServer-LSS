@@ -5,11 +5,7 @@
 # It uses gum to prompt for configuration values and automatically downloads
 # the latest FXServer build using the "latest_download" URL from FiveM's changelog.
 #
-# In addition, it checks for prerequisites and installs gum automatically on
-# Debian/Ubuntu systems if it's missing.
-#
-# Prerequisites (auto-installed on Debian/Ubuntu for gum only):
-#   - gum, curl, jq, wget, tar, git, xz-utils
+# It also checks for prerequisites and auto-installs gum on Debian/Ubuntu.
 #
 # Usage: ./fxserver-setup.sh
 
@@ -121,20 +117,25 @@ set steam_webApiKey ""
 sv_licenseKey "$LICENSE_KEY"
 EOF
 
-# If txAdmin is enabled, print a note with instructions
+# If txAdmin is enabled, print a note and modify the server start command accordingly.
 if [ "$TXADMIN" = "yes" ]; then
-  echo "Note: TXAdmin is included in FXServer builds above 2524.
-To run txAdmin for administration, launch the server with:
-  ./run.sh +set serverProfile dev_server +set txAdminPort 40121
-This script does not alter txAdmin settings automatically."
+  echo "Note: TXAdmin is enabled. The server will start with txAdmin support (+set txAdminPort 40121)."
 fi
 
-# Ask the user whether to start the server immediately
+# Ask the user whether to start the server immediately.
 if gum confirm "Installation complete. Do you want to start the FXServer now?"; then
   echo "Starting FXServer..."
   cd "$SERVER_DIR/server-data" || exit 1
-  bash "$SERVER_DIR/server/run.sh" +exec server.cfg
+  if [ "$TXADMIN" = "yes" ]; then
+    bash "$SERVER_DIR/server/run.sh" +exec server.cfg +set txAdminPort 40121
+  else
+    bash "$SERVER_DIR/server/run.sh" +exec server.cfg
+  fi
 else
   echo "Setup complete. To start your server later, run:"
-  echo "cd \"$SERVER_DIR/server-data\" && bash \"$SERVER_DIR/server/run.sh\" +exec server.cfg"
+  if [ "$TXADMIN" = "yes" ]; then
+    echo "cd \"$SERVER_DIR/server-data\" && bash \"$SERVER_DIR/server/run.sh\" +exec server.cfg +set txAdminPort 40121"
+  else
+    echo "cd \"$SERVER_DIR/server-data\" && bash \"$SERVER_DIR/server/run.sh\" +exec server.cfg"
+  fi
 fi
