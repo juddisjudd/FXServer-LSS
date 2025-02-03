@@ -1,0 +1,140 @@
+#!/bin/bash
+# fxserver-setup.sh
+#
+# This script automates the setup of a vanilla FXServer (FiveM) on Linux.
+# It uses gum to prompt for configuration values and automatically downloads
+# the latest FXServer build using the "latest_download" URL from FiveM's changelog.
+#
+# In addition, it checks for prerequisites and installs gum automatically on
+# Debian/Ubuntu systems if it's missing.
+#
+# Prerequisites (auto-installed on Debian/Ubuntu for gum only):
+#   - gum, curl, jq, wget, tar, git, xz-utils
+#
+# Usage: ./fxserver-setup.sh
+
+set -e
+
+# Function to check if a command exists; if not, exit with an error.
+check_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "Error: '$1' is not installed. Please install it and try again." >&2
+    exit 1
+  fi
+}
+
+# Check for prerequisites that we assume are available
+for cmd in curl jq wget tar git xz; do
+  check_cmd "$cmd"
+done
+
+# Check for gum; if missing and on Debian/Ubuntu, auto-install it.
+if ! command -v gum >/dev/null 2>&1; then
+  if [ -f /etc/debian_version ]; then
+    echo "gum is not installed. Installing gum on Debian/Ubuntu..."
+    sudo mkdir -p /etc/apt/keyrings
+    curl -fsSL https://repo.charm.sh/apt/gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/charm.gpg
+    echo "deb [signed-by=/etc/apt/keyrings/charm.gpg] https://repo.charm.sh/apt/ * *" | sudo tee /etc/apt/sources.list.d/charm.list
+    sudo apt update && sudo apt install -y gum
+  else
+    echo "gum is not installed. Please install gum from https://github.com/charmbracelet/gum" >&2
+    exit 1
+  fi
+fi
+
+# Retrieve the latest FXServer build URL from FiveM's changelog API
+JSON_URL="https://changelogs-live.fivem.net/api/changelog/versions/linux/server"
+BUILD_URL=$(curl -s "$JSON_URL" | jq -r '.latest_download')
+if [ -z "$BUILD_URL" ] || [ "$BUILD_URL" = "null" ]; then
+  echo "Could not retrieve the latest FXServer download URL."
+  exit 1
+fi
+
+# Prompt for configuration values using gum
+SERVER_DIR=$(gum input --placeholder "Enter FXServer base directory (e.g., ~/FXServer)" --value "$HOME/FXServer")
+LICENSE_KEY=$(gum input --placeholder "Enter your FXServer license key")
+TXADMIN=$(gum confirm "Do you want to run txAdmin for server administration?" && echo "yes" || echo "no")
+
+# Confirm settings with the user
+gum confirm "Proceed with installation using the following settings?
+
+Server Directory: $SERVER_DIR
+Download URL:     $BUILD_URL
+License Key:      $LICENSE_KEY
+Run txAdmin:      $TXADMIN
+
+Is that correct?" || { echo "Installation aborted."; exit 1; }
+
+# Create necessary directories for server binaries and data
+echo "Creating directories..."
+mkdir -p "$SERVER_DIR/server" "$SERVER_DIR/server-data"
+
+# Download the FXServer build using the latest_download URL
+echo "Downloading FXServer build..."
+cd "$SERVER_DIR/server" || exit 1
+wget "$BUILD_URL" -O fx.tar.xz
+
+# Extract the downloaded build
+echo "Extracting FXServer build..."
+tar xf fx.tar.xz
+
+# Clone the cfx-server-data repository
+echo "Cloning cfx-server-data repository..."
+git clone https://github.com/citizenfx/cfx-server-data.git "$SERVER_DIR/server-data"
+
+# Create a server.cfg file in the server-data folder with basic settings
+CFG_FILE="$SERVER_DIR/server-data/server.cfg"
+echo "Creating server.cfg..."
+cat > "$CFG_FILE" <<EOF
+# Network endpoints – adjust IP if needed.
+endpoint_add_tcp "0.0.0.0:30120"
+endpoint_add_udp "0.0.0.0:30120"
+
+# Default resources to start
+ensure mapmanager
+ensure chat
+ensure spawnmanager
+ensure sessionmanager
+ensure basic-gamemode
+ensure hardcap
+ensure rconlog
+
+sv_scriptHookAllowed 0
+
+# Server tags and locale
+sets tags "default"
+sets locale "en-US"
+
+# Server hostname and project details
+sv_hostname "FXServer, but unconfigured"
+sets sv_projectName "My FXServer Project"
+sets sv_projectDesc "Default FXServer requiring configuration"
+
+# OneSync and player slot limit
+set onesync on
+sv_maxclients 48
+
+# Steam Web API key (if using Steam auth)
+set steam_webApiKey ""
+
+# License key for your server
+sv_licenseKey "$LICENSE_KEY"
+EOF
+
+# If txAdmin is enabled, print a note with instructions
+if [ "$TXADMIN" = "yes" ]; then
+  echo "Note: TXAdmin is included in FXServer builds above 2524.
+To run txAdmin for administration, launch the server with:
+  ./run.sh +set serverProfile dev_server +set txAdminPort 40121
+This script does not alter txAdmin settings automatically."
+fi
+
+# Ask the user whether to start the server immediately
+if gum confirm "Installation complete. Do you want to start the FXServer now?"; then
+  echo "Starting FXServer..."
+  cd "$SERVER_DIR/server-data" || exit 1
+  bash "$SERVER_DIR/server/run.sh" +exec server.cfg
+else
+  echo "Setup complete. To start your server later, run:"
+  echo "cd \"$SERVER_DIR/server-data\" && bash \"$SERVER_DIR/server/run.sh\" +exec server.cfg"
+fi
