@@ -134,6 +134,10 @@ if gum confirm "Would you like to configure MariaDB for your FXServer?"; then
         # Run secure installation for fresh installs
         echo "Running secure installation for MariaDB..."
         sudo mysql_secure_installation
+        
+        # Wait briefly after secure installation
+        sleep 2
+        clear
     else
         echo "MariaDB is already installed."
     fi
@@ -188,7 +192,12 @@ EOF
     fi
 
     echo "MariaDB configuration complete!"
+    echo "Continuing with FXServer setup..."
+    sleep 2
 fi
+
+# Clear screen before server start prompt
+clear
 
 # If txAdmin is enabled, print a note and modify the server start command accordingly.
 if [ "$TXADMIN" = "yes" ]; then
