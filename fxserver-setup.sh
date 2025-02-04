@@ -81,7 +81,7 @@ git clone https://github.com/citizenfx/cfx-server-data.git "$SERVER_DIR/server-d
 # Create a server.cfg file in the server-data folder with basic settings
 CFG_FILE="$SERVER_DIR/server-data/server.cfg"
 echo "Creating server.cfg..."
-cat > "$CFG_FILE" <<EOF
+cat > "$CFG_FILE" <<'EOF'
 # Network endpoints – adjust IP if needed.
 endpoint_add_tcp "0.0.0.0:30120"
 endpoint_add_udp "0.0.0.0:30120"
@@ -114,7 +114,7 @@ sv_maxclients 48
 set steam_webApiKey ""
 
 # License key for your server
-sv_licenseKey "$LICENSE_KEY"
+sv_licenseKey "${LICENSE_KEY}"
 EOF
 
 # Prompt for MariaDB installation/configuration
@@ -137,10 +137,6 @@ if gum confirm "Would you like to configure MariaDB for your FXServer?"; then
     else
         echo "MariaDB is already installed."
     fi
-
-    # Secure MariaDB installation
-    echo "Securing MariaDB installation..."
-    sudo mysql_secure_installation
 
     # Prompt for database configuration
     DB_NAME=$(gum input --placeholder "Enter database name (e.g., fxserver)")
@@ -171,20 +167,27 @@ if gum confirm "Would you like to configure MariaDB for your FXServer?"; then
         fi
     else
         echo "Creating database user..."
-    sudo mysql -e "CREATE DATABASE IF NOT EXISTS ${DB_NAME};"
-    sudo mysql -e "CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';"
-    sudo mysql -e "GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'localhost';"
-    sudo mysql -e "FLUSH PRIVILEGES;"
+        sudo mysql -e "CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';"
+        sudo mysql -e "GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'localhost';"
+        sudo mysql -e "FLUSH PRIVILEGES;"
+    fi
 
-    # Add database configuration to server.cfg
-    echo "Adding database configuration to server.cfg..."
-    cat >> "$CFG_FILE" <<EOF
+    # Add database configuration to server.cfg if it doesn't already exist
+    if ! grep -q "mysql_connection_string" "$CFG_FILE"; then
+        echo "Adding database configuration to server.cfg..."
+        cat >> "$CFG_FILE" <<EOF
 
 # Database configuration
 set mysql_connection_string "mysql://${DB_USER}:${DB_PASS}@localhost/${DB_NAME}?charset=utf8mb4"
 EOF
+    else
+        echo "Database configuration already exists in server.cfg"
+        if gum confirm "Would you like to update the database configuration?"; then
+            sed -i '/mysql_connection_string/c\set mysql_connection_string "mysql://${DB_USER}:${DB_PASS}@localhost/${DB_NAME}?charset=utf8mb4"' "$CFG_FILE"
+        fi
+    fi
 
-    echo "MariaDB installation and configuration complete!"
+    echo "MariaDB configuration complete!"
 fi
 
 # If txAdmin is enabled, print a note and modify the server start command accordingly.
