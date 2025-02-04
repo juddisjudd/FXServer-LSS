@@ -238,18 +238,51 @@ fi
 if gum confirm "Installation complete. Do you want to start the FXServer now?"; then
   echo "Starting FXServer..."
   cd "$SERVER_DIR/server-data" || exit 1
+  
+  # Check if screen is installed
+  if ! command -v screen >/dev/null 2>&1; then
+    echo "Screen is not installed. Installing screen..."
+    sudo apt update && sudo apt install -y screen
+  fi
+  
+  # Kill any existing FXServer screen session
+  screen -X -S FXServer quit >/dev/null 2>&1
+  
   if [ "$TXADMIN" = "yes" ]; then
-    # Launch in screen (txAdmin requires monitor mode; do not use +exec)
-    screen -dmS FXServer "$SERVER_DIR/server/run.sh" +set serverProfile FXServer +set txAdminPort 40121
+    # Launch in screen with txAdmin
+    echo "Starting server with txAdmin in screen session..."
+    screen -L -dmS FXServer bash -c "cd '$SERVER_DIR/server-data' && '$SERVER_DIR/server/run.sh' +set serverProfile FXServer +set txAdminPort 40121"
+    
+    # Verify screen session was created
+    if ! screen -list | grep -q "FXServer"; then
+      echo "Error: Failed to create screen session. Please check the logs."
+      exit 1
+    fi
+    
+    echo "Server started successfully!"
+    echo "To attach to the server console, use: screen -r FXServer"
+    echo "To detach from the console, press: Ctrl+A followed by D"
+    echo "txAdmin will be available at: http://localhost:40121"
   else
-    # Launch normally with server.cfg loaded
-    bash "$SERVER_DIR/server/run.sh" +exec server.cfg
+    # Launch normally with server.cfg
+    echo "Starting server in screen session..."
+    screen -L -dmS FXServer bash -c "cd '$SERVER_DIR/server-data' && '$SERVER_DIR/server/run.sh' +exec server.cfg"
+    
+    # Verify screen session was created
+    if ! screen -list | grep -q "FXServer"; then
+      echo "Error: Failed to create screen session. Please check the logs."
+      exit 1
+    fi
+    
+    echo "Server started successfully!"
+    echo "To attach to the server console, use: screen -r FXServer"
+    echo "To detach from the console, press: Ctrl+A followed by D"
   fi
 else
   echo "Setup complete. To start your server later, run:"
   if [ "$TXADMIN" = "yes" ]; then
     echo "cd \"$SERVER_DIR/server-data\" && screen -dmS FXServer \"$SERVER_DIR/server/run.sh\" +set serverProfile FXServer +set txAdminPort 40121"
   else
-    echo "cd \"$SERVER_DIR/server-data\" && bash \"$SERVER_DIR/server/run.sh\" +exec server.cfg"
+    echo "cd \"$SERVER_DIR/server-data\" && screen -dmS FXServer \"$SERVER_DIR/server/run.sh\" +exec server.cfg"
   fi
 fi
