@@ -57,9 +57,28 @@ setup_mariadb() {
   sudo DEBIAN_FRONTEND=noninteractive apt-get update
   sudo DEBIAN_FRONTEND=noninteractive apt-get install -y mariadb-server
   
-  # Secure the MariaDB installation using modern syntax.
+  # Start MariaDB service if not running
+  sudo systemctl start mariadb
+  sudo systemctl enable mariadb
+  
+  # Wait for MariaDB to be ready
+  echo "Waiting for MariaDB to be ready..."
+  for i in {1..30}; do
+    if sudo mysqladmin ping &>/dev/null; then
+      break
+    fi
+    sleep 1
+  done
+  
+  # Secure the MariaDB installation using modern syntax
+  # First set root password
   sudo mysql -e "
-    ALTER USER 'root'@'localhost' IDENTIFIED BY '$DB_ROOT_PASSWORD';
+    SET PASSWORD FOR 'root'@'localhost' = PASSWORD('$DB_ROOT_PASSWORD');
+    FLUSH PRIVILEGES;
+  "
+  
+  # Then use root password for subsequent commands
+  sudo mysql -uroot -p"$DB_ROOT_PASSWORD" -e "
     DELETE FROM mysql.user WHERE User='';
     DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');
     DROP DATABASE IF EXISTS test;
@@ -68,12 +87,21 @@ setup_mariadb() {
   "
   
   # Create database and user for FXServer
-  sudo mysql -e "
+  sudo mysql -uroot -p"$DB_ROOT_PASSWORD" -e "
     CREATE DATABASE IF NOT EXISTS \`$DB_NAME\` CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
     CREATE USER IF NOT EXISTS '$DB_USER'@'localhost' IDENTIFIED BY '$DB_USER_PASSWORD';
     GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO '$DB_USER'@'localhost';
     FLUSH PRIVILEGES;
   "
+  
+  # Export variables to be used by other parts of the script
+  export DB_NAME DB_USER DB_USER_PASSWORD
+  
+  # Verify database access
+  if ! mysql -u"$DB_USER" -p"$DB_USER_PASSWORD" -e "USE \`$DB_NAME\`" &>/dev/null; then
+    echo "Error: Unable to access database with created credentials. Please check MariaDB logs."
+    exit 1
+  fi
   
   # Display the credentials to the user
   echo
