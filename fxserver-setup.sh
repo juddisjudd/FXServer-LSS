@@ -267,42 +267,84 @@ if gum confirm "Installation complete. Do you want to start the FXServer now?"; 
   
   # Kill any existing FXServer screen session
   screen -X -S FXServer quit >/dev/null 2>&1
+  sleep 2  # Give it time to clean up
   
   if [ "$TXADMIN" = "yes" ]; then
+    # Create a startup script
+    STARTUP_SCRIPT="$SERVER_DIR/start_server.sh"
+    echo "Creating startup script at $STARTUP_SCRIPT"
+    
+    cat > "$STARTUP_SCRIPT" <<EOF
+#!/bin/bash
+cd "$SERVER_DIR/server-data"
+exec "$SERVER_DIR/server/run.sh" +set serverProfile FXServer +set txAdminPort 40121
+EOF
+    
+    chmod +x "$STARTUP_SCRIPT"
+    
     # Launch in screen with txAdmin
     echo "Starting server with txAdmin in screen session..."
-    screen -L -dmS FXServer bash -c "cd '$SERVER_DIR/server-data' && '$SERVER_DIR/server/run.sh' +set serverProfile FXServer +set txAdminPort 40121"
+    screen -dm -S FXServer "$STARTUP_SCRIPT"
     
-    # Verify screen session was created
-    if ! screen -list | grep -q "FXServer"; then
-      echo "Error: Failed to create screen session. Please check the logs."
+    # Wait a moment and verify screen session
+    sleep 3
+    if screen -list | grep -q "FXServer"; then
+      echo "Server started successfully!"
+      echo "Checking screen session status..."
+      screen -ls
+      echo ""
+      echo "To attach to the server console, use: screen -r FXServer"
+      echo "To detach from the console, press: Ctrl+A followed by D"
+      echo "txAdmin will be available at: http://localhost:40121"
+    else
+      echo "Error: Screen session not found after startup. Server may have failed to start."
+      echo "Checking for potential errors in screen log..."
+      if [ -f "screenlog.0" ]; then
+        tail -n 20 screenlog.0
+      fi
       exit 1
     fi
-    
-    echo "Server started successfully!"
-    echo "To attach to the server console, use: screen -r FXServer"
-    echo "To detach from the console, press: Ctrl+A followed by D"
-    echo "txAdmin will be available at: http://localhost:40121"
   else
+    # Create a startup script
+    STARTUP_SCRIPT="$SERVER_DIR/start_server.sh"
+    echo "Creating startup script at $STARTUP_SCRIPT"
+    
+    cat > "$STARTUP_SCRIPT" <<EOF
+#!/bin/bash
+cd "$SERVER_DIR/server-data"
+exec "$SERVER_DIR/server/run.sh" +exec server.cfg
+EOF
+    
+    chmod +x "$STARTUP_SCRIPT"
+    
     # Launch normally with server.cfg
     echo "Starting server in screen session..."
-    screen -L -dmS FXServer bash -c "cd '$SERVER_DIR/server-data' && '$SERVER_DIR/server/run.sh' +exec server.cfg"
+    screen -dm -S FXServer "$STARTUP_SCRIPT"
     
-    # Verify screen session was created
-    if ! screen -list | grep -q "FXServer"; then
-      echo "Error: Failed to create screen session. Please check the logs."
+    # Wait a moment and verify screen session
+    sleep 3
+    if screen -list | grep -q "FXServer"; then
+      echo "Server started successfully!"
+      echo "Checking screen session status..."
+      screen -ls
+      echo ""
+      echo "To attach to the server console, use: screen -r FXServer"
+      echo "To detach from the console, press: Ctrl+A followed by D"
+    else
+      echo "Error: Screen session not found after startup. Server may have failed to start."
+      echo "Checking for potential errors in screen log..."
+      if [ -f "screenlog.0" ]; then
+        tail -n 20 screenlog.0
+      fi
       exit 1
     fi
-    
-    echo "Server started successfully!"
-    echo "To attach to the server console, use: screen -r FXServer"
-    echo "To detach from the console, press: Ctrl+A followed by D"
   fi
 else
   echo "Setup complete. To start your server later, run:"
-  if [ "$TXADMIN" = "yes" ]; then
-    echo "cd \"$SERVER_DIR/server-data\" && screen -dmS FXServer \"$SERVER_DIR/server/run.sh\" +set serverProfile FXServer +set txAdminPort 40121"
-  else
-    echo "cd \"$SERVER_DIR/server-data\" && screen -dmS FXServer \"$SERVER_DIR/server/run.sh\" +exec server.cfg"
-  fi
+  echo ""
+  echo "cd \"$SERVER_DIR\""
+  echo "bash start_server.sh"
+  echo ""
+  echo "Or to run it in a screen session:"
+  echo "screen -dmS FXServer bash start_server.sh"
 fi
