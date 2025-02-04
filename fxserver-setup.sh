@@ -137,7 +137,6 @@ if gum confirm "Would you like to configure MariaDB for your FXServer?"; then
         
         # Wait briefly after secure installation
         sleep 2
-        clear
     else
         echo "MariaDB is already installed."
     fi
@@ -192,20 +191,15 @@ EOF
     fi
 
     echo "MariaDB configuration complete!"
+    sleep 2
 fi
 
-echo "Continuing with FXServer setup..."
-sleep 2
-
-# Clear screen before server start prompt
-clear
-
-# If txAdmin is enabled, print a note and modify the server start command accordingly.
+# Print txAdmin note if enabled
 if [ "$TXADMIN" = "yes" ]; then
   echo "Note: TXAdmin is enabled. The server will start with txAdmin support (+set txAdminPort 40121)."
 fi
 
-# Ask the user whether to start the server immediately.
+# Ask about starting the server
 if gum confirm "Installation complete. Do you want to start the FXServer now?"; then
   echo "Starting FXServer..."
   cd "$SERVER_DIR/server-data" || exit 1
