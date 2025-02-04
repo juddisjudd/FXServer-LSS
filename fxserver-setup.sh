@@ -265,9 +265,13 @@ if gum confirm "Installation complete. Do you want to start the FXServer now?"; 
     sudo apt update && sudo apt install -y screen
   fi
   
-  # Kill any existing FXServer screen session
+  # Kill any existing FXServer screen session (as current user)
   screen -X -S FXServer quit >/dev/null 2>&1
   sleep 2  # Give it time to clean up
+  
+  # Ensure proper ownership of the FXServer directory
+  echo "Setting correct permissions..."
+  sudo chown -R "$USER:$USER" "$SERVER_DIR"
   
   if [ "$TXADMIN" = "yes" ]; then
     # Create a startup script
@@ -282,7 +286,7 @@ EOF
     
     chmod +x "$STARTUP_SCRIPT"
     
-    # Launch in screen with txAdmin
+    # Launch in screen with txAdmin (as current user)
     echo "Starting server with txAdmin in screen session..."
     screen -dm -S FXServer "$STARTUP_SCRIPT"
     
@@ -317,7 +321,7 @@ EOF
     
     chmod +x "$STARTUP_SCRIPT"
     
-    # Launch normally with server.cfg
+    # Launch normally with server.cfg (as current user)
     echo "Starting server in screen session..."
     screen -dm -S FXServer "$STARTUP_SCRIPT"
     
