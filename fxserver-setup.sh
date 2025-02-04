@@ -192,9 +192,10 @@ EOF
     fi
 
     echo "MariaDB configuration complete!"
-    echo "Continuing with FXServer setup..."
-    sleep 2
 fi
+
+echo "Continuing with FXServer setup..."
+sleep 2
 
 # Clear screen before server start prompt
 clear
