@@ -258,16 +258,16 @@ setup_mariadb() {
 # Function to execute recipe tasks
 execute_recipe_task() {
   local task="$1"
-  local action=$(echo "$task" | yq eval '.action' -)
+  local action=$(echo "$task" | yq e '.action' -)
   
   echo "Processing action: $action"
   
   case "$action" in
     "download_github")
-      local src=$(echo "$task" | yq eval '.src' -)
-      local ref=$(echo "$task" | yq eval '.ref' -)
-      local dest=$(echo "$task" | yq eval '.dest' -)
-      local subpath=$(echo "$task" | yq eval '.subpath // ""' -)
+      local src=$(echo "$task" | yq e '.src' -)
+      local ref=$(echo "$task" | yq e '.ref' -)
+      local dest=$(echo "$task" | yq e '.dest' -)
+      local subpath=$(echo "$task" | yq e '.subpath // ""' -)
       
       echo "Downloading from GitHub: $src"
       if [ -n "$subpath" ]; then
@@ -278,16 +278,16 @@ execute_recipe_task() {
       ;;
       
     "download_file")
-      local url=$(echo "$task" | yq eval '.url' -)
-      local path=$(echo "$task" | yq eval '.path' -)
+      local url=$(echo "$task" | yq e '.url' -)
+      local path=$(echo "$task" | yq e '.path' -)
       
       echo "Downloading file: $url"
       wget "$url" -O "$path"
       ;;
       
     "unzip")
-      local src=$(echo "$task" | yq eval '.src' -)
-      local dest=$(echo "$task" | yq eval '.dest' -)
+      local src=$(echo "$task" | yq e '.src' -)
+      local dest=$(echo "$task" | yq e '.dest' -)
       
       echo "Extracting: $src to $dest"
       mkdir -p "$dest"
@@ -295,25 +295,25 @@ execute_recipe_task() {
       ;;
       
     "move_path")
-      local src=$(echo "$task" | yq eval '.src' -)
-      local dest=$(echo "$task" | yq eval '.dest' -)
+      local src=$(echo "$task" | yq e '.src' -)
+      local dest=$(echo "$task" | yq e '.dest' -)
       
       echo "Moving: $src to $dest"
       mv "$src" "$dest"
       ;;
       
     "query_database")
-      local file=$(echo "$task" | yq eval '.file' -)
+      local file=$(echo "$task" | yq e '.file' -)
       
       echo "Executing SQL file: $file"
       mysql -u"$DB_USER" -p"$DB_USER_PASSWORD" "$DB_NAME" < "$file"
       ;;
       
     "replace_string")
-      local file=$(echo "$task" | yq eval '.file' -)
-      local search=$(echo "$task" | yq eval '.search // ""' -)
-      local replace=$(echo "$task" | yq eval '.replace // ""' -)
-      local mode=$(echo "$task" | yq eval '.mode // ""' -)
+      local file=$(echo "$task" | yq e '.file' -)
+      local search=$(echo "$task" | yq e '.search // ""' -)
+      local replace=$(echo "$task" | yq e '.replace // ""' -)
+      local mode=$(echo "$task" | yq e '.mode // ""' -)
       
       if [ "$mode" = "all_vars" ]; then
         echo "Replacing variables in: $file"
@@ -331,7 +331,7 @@ execute_recipe_task() {
       ;;
       
     "remove_path")
-      local path=$(echo "$task" | yq eval '.path' -)
+      local path=$(echo "$task" | yq e '.path' -)
       
       echo "Removing: $path"
       rm -rf "$path"
@@ -358,14 +358,22 @@ setup_recipe() {
   # Create necessary directories
   mkdir -p "$SERVER_DIR/tmp"
   
-  # Process each task in the recipe - fixed yq command
+  # Process recipe tasks
   echo "Processing recipe tasks..."
-  while IFS= read -r task; do
+  # First, check if the file exists and is readable
+  if [ ! -f "$SERVER_DIR/recipe.yaml" ]; then
+    echo "Error: Recipe file not found at $SERVER_DIR/recipe.yaml"
+    exit 1
+  fi
+  
+  # Read and process tasks
+  while read -r task; do
     if [ ! -z "$task" ]; then
-      echo "Executing task: $task"
+      echo "Processing task:"
+      echo "$task"
       execute_recipe_task "$task"
     fi
-  done < <(yq eval '.tasks[]' "$SERVER_DIR/recipe.yaml")
+  done < <(yq e -o=json '.tasks[]' "$SERVER_DIR/recipe.yaml")
 }
 
 # Retrieve the latest FXServer build URL
