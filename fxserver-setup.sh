@@ -149,23 +149,29 @@ if gum confirm "Would you like to configure MariaDB for your FXServer?"; then
     # Debug: Show we're checking database
     echo "DEBUG: Checking for existing database and user..."
     
-    # Check if database already exists
-    DB_EXISTS=$(sudo mysql -e "SHOW DATABASES LIKE '${DB_NAME}';" | grep -o "${DB_NAME}" || true)
-    USER_EXISTS=$(sudo mysql -e "SELECT User FROM mysql.user WHERE User='${DB_USER}';" | grep -o "${DB_USER}" || true)
+    # Check if database already exists - use exact match and take first line only
+    DB_EXISTS=$(sudo mysql -N -e "SHOW DATABASES LIKE '${DB_NAME}';" | head -n1 || true)
+    USER_EXISTS=$(sudo mysql -N -e "SELECT User FROM mysql.user WHERE User='${DB_USER}' LIMIT 1;" | head -n1 || true)
     
     echo "DEBUG: DB_EXISTS='${DB_EXISTS}', USER_EXISTS='${USER_EXISTS}'"
     
-    if [ "${DB_EXISTS}" = "${DB_NAME}" ]; then
+    if [ -n "${DB_EXISTS}" ]; then
         echo "Database '${DB_NAME}' already exists."
         if gum confirm "Would you like to recreate the database? (This will delete all existing data)"; then
             echo "Dropping and recreating database..."
-            sudo mysql -e "DROP DATABASE ${DB_NAME};"
-            if sudo mysql -e "CREATE DATABASE ${DB_NAME};"; then
-                echo "Database recreated successfully."
+            if sudo mysql -e "DROP DATABASE ${DB_NAME};"; then
+                if sudo mysql -e "CREATE DATABASE ${DB_NAME};"; then
+                    echo "Database recreated successfully."
+                else
+                    echo "Error: Failed to recreate database."
+                    exit 1
+                fi
             else
-                echo "Error: Failed to recreate database."
+                echo "Error: Failed to drop existing database."
                 exit 1
             fi
+        else
+            echo "Keeping existing database."
         fi
     else
         echo "Creating new database '${DB_NAME}'..."
@@ -177,14 +183,32 @@ if gum confirm "Would you like to configure MariaDB for your FXServer?"; then
         fi
     fi
 
-    if [ "${USER_EXISTS}" = "${DB_USER}" ]; then
+    if [ -n "${USER_EXISTS}" ]; then
         echo "User '${DB_USER}' already exists."
         if gum confirm "Would you like to reset the user's password?"; then
             echo "Updating user password..."
             if sudo mysql -e "ALTER USER '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';"; then
                 echo "User password updated successfully."
+                # Always ensure proper privileges
+                echo "Ensuring proper privileges..."
+                if sudo mysql -e "GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'localhost'; FLUSH PRIVILEGES;"; then
+                    echo "User privileges verified."
+                else
+                    echo "Error: Failed to verify user privileges."
+                    exit 1
+                fi
             else
                 echo "Error: Failed to update user password."
+                exit 1
+            fi
+        else
+            echo "Keeping existing user configuration."
+            # Still ensure proper privileges
+            echo "Ensuring proper privileges..."
+            if sudo mysql -e "GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'localhost'; FLUSH PRIVILEGES;"; then
+                echo "User privileges verified."
+            else
+                echo "Error: Failed to verify user privileges."
                 exit 1
             fi
         fi
