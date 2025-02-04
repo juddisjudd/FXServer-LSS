@@ -81,7 +81,7 @@ git clone https://github.com/citizenfx/cfx-server-data.git "$SERVER_DIR/server-d
 # Create a server.cfg file in the server-data folder with basic settings
 CFG_FILE="$SERVER_DIR/server-data/server.cfg"
 echo "Creating server.cfg..."
-cat > "$CFG_FILE" <<'EOF'
+cat > "$CFG_FILE" <<EOF
 # Network endpoints – adjust IP if needed.
 endpoint_add_tcp "0.0.0.0:30120"
 endpoint_add_udp "0.0.0.0:30120"
