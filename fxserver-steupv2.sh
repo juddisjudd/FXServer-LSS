@@ -38,12 +38,7 @@ fi
 setup_mariadb() {
   local server_type=$1
   
-  echo "Checking MariaDB installation..."
-  
-  # Generate secure random passwords
-  DB_USER_PASSWORD=$(openssl rand -base64 16)
-  
-  # Set database name based on server type
+  # Set database name based on server type first
   if [ "$server_type" = "ox_core" ]; then
     DB_NAME="overextended"
     DB_USER="overextended"
@@ -52,8 +47,24 @@ setup_mariadb() {
     DB_USER=$(gum input --placeholder "Enter database user (e.g., fxserver)" --value "fxserver")
   fi
   
+  # Generate user password
+  DB_USER_PASSWORD=$(openssl rand -base64 16)
+  
   # Check if MariaDB is already installed
-  if ! dpkg -l | grep -q mariadb-server; then
+  if dpkg -l | grep -q "^ii.*mariadb-server"; then
+    echo "MariaDB is already installed"
+    
+    # For existing installation, prompt for root password
+    while true; do
+      DB_ROOT_PASSWORD=$(gum input --password --placeholder "Enter existing MariaDB root password")
+      if mysql -uroot -p"$DB_ROOT_PASSWORD" -e "SELECT 1" &>/dev/null; then
+        echo "Successfully authenticated with MariaDB"
+        break
+      else
+        echo "Invalid password. Please try again."
+      fi
+    done
+  else
     echo "Installing MariaDB..."
     sudo DEBIAN_FRONTEND=noninteractive apt-get update
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y mariadb-server
@@ -61,47 +72,34 @@ setup_mariadb() {
     # Generate root password for fresh install
     DB_ROOT_PASSWORD=$(openssl rand -base64 16)
     
-    # Start MariaDB service if not running
+    # Start MariaDB service
     sudo systemctl start mariadb
     sudo systemctl enable mariadb
     
     # Wait for MariaDB to be ready
     echo "Waiting for MariaDB to be ready..."
     for i in {1..30}; do
-      if sudo mysqladmin ping &>/dev/null; then
+      if mysqladmin ping &>/dev/null; then
         break
       fi
       sleep 1
     done
     
     # Set root password for fresh installation
-    sudo mysql -e "
-      SET PASSWORD FOR 'root'@'localhost' = PASSWORD('$DB_ROOT_PASSWORD');
-      FLUSH PRIVILEGES;
-    "
+    sudo mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$DB_ROOT_PASSWORD';"
     
     # Secure the installation
-    sudo mysql -uroot -p"$DB_ROOT_PASSWORD" -e "
+    mysql -uroot -p"$DB_ROOT_PASSWORD" -e "
       DELETE FROM mysql.user WHERE User='';
       DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');
       DROP DATABASE IF EXISTS test;
       DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';
       FLUSH PRIVILEGES;
     "
-  else
-    echo "MariaDB is already installed."
-    # For existing installation, prompt for root password
-    while true; do
-      DB_ROOT_PASSWORD=$(gum input --password --placeholder "Enter existing MariaDB root password")
-      if mysql -uroot -p"$DB_ROOT_PASSWORD" -e "SELECT 1" &>/dev/null; then
-        break
-      else
-        echo "Invalid password. Please try again."
-      fi
-    done
   fi
   
   # Create database and user for FXServer
+  echo "Creating database and user..."
   mysql -uroot -p"$DB_ROOT_PASSWORD" -e "
     CREATE DATABASE IF NOT EXISTS \`$DB_NAME\` CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
     CREATE USER IF NOT EXISTS '$DB_USER'@'localhost' IDENTIFIED BY '$DB_USER_PASSWORD';
@@ -113,6 +111,7 @@ setup_mariadb() {
   export DB_NAME DB_USER DB_USER_PASSWORD
   
   # Verify database access
+  echo "Verifying database access..."
   if ! mysql -u"$DB_USER" -p"$DB_USER_PASSWORD" -e "USE \`$DB_NAME\`" &>/dev/null; then
     echo "Error: Unable to access database with created credentials. Please check MariaDB logs."
     exit 1
