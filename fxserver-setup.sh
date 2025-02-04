@@ -117,6 +117,76 @@ set steam_webApiKey ""
 sv_licenseKey "$LICENSE_KEY"
 EOF
 
+# Prompt for MariaDB installation/configuration
+if gum confirm "Would you like to configure MariaDB for your FXServer?"; then
+    # Check if MariaDB is already installed
+    if ! command -v mysql >/dev/null 2>&1; then
+        echo "MariaDB is not installed. Installing MariaDB..."
+        if [ -f /etc/debian_version ]; then
+            # Install MariaDB on Debian/Ubuntu
+            sudo apt update
+            sudo apt install -y mariadb-server
+        else
+            echo "Please install MariaDB manually for your distribution"
+            exit 1
+        fi
+        
+        # Run secure installation for fresh installs
+        echo "Running secure installation for MariaDB..."
+        sudo mysql_secure_installation
+    else
+        echo "MariaDB is already installed."
+    fi
+
+    # Secure MariaDB installation
+    echo "Securing MariaDB installation..."
+    sudo mysql_secure_installation
+
+    # Prompt for database configuration
+    DB_NAME=$(gum input --placeholder "Enter database name (e.g., fxserver)")
+    DB_USER=$(gum input --placeholder "Enter database user (e.g., fxserver)")
+    DB_PASS=$(gum input --placeholder "Enter database password" --password)
+
+    # Check if database already exists
+    DB_EXISTS=$(sudo mysql -e "SHOW DATABASES LIKE '${DB_NAME}';" | grep -o "${DB_NAME}")
+    USER_EXISTS=$(sudo mysql -e "SELECT User FROM mysql.user WHERE User='${DB_USER}';" | grep -o "${DB_USER}")
+    
+    if [ "${DB_EXISTS}" = "${DB_NAME}" ]; then
+        echo "Database '${DB_NAME}' already exists."
+        if gum confirm "Would you like to recreate the database? (This will delete all existing data)"; then
+            echo "Dropping and recreating database..."
+            sudo mysql -e "DROP DATABASE ${DB_NAME};"
+            sudo mysql -e "CREATE DATABASE ${DB_NAME};"
+        fi
+    else
+        echo "Creating database..."
+        sudo mysql -e "CREATE DATABASE ${DB_NAME};"
+    fi
+
+    if [ "${USER_EXISTS}" = "${DB_USER}" ]; then
+        echo "User '${DB_USER}' already exists."
+        if gum confirm "Would you like to reset the user's password?"; then
+            echo "Updating user password..."
+            sudo mysql -e "ALTER USER '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';"
+        fi
+    else
+        echo "Creating database user..."
+    sudo mysql -e "CREATE DATABASE IF NOT EXISTS ${DB_NAME};"
+    sudo mysql -e "CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';"
+    sudo mysql -e "GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'localhost';"
+    sudo mysql -e "FLUSH PRIVILEGES;"
+
+    # Add database configuration to server.cfg
+    echo "Adding database configuration to server.cfg..."
+    cat >> "$CFG_FILE" <<EOF
+
+# Database configuration
+set mysql_connection_string "mysql://${DB_USER}:${DB_PASS}@localhost/${DB_NAME}?charset=utf8mb4"
+EOF
+
+    echo "MariaDB installation and configuration complete!"
+fi
+
 # If txAdmin is enabled, print a note and modify the server start command accordingly.
 if [ "$TXADMIN" = "yes" ]; then
   echo "Note: TXAdmin is enabled. The server will start with txAdmin support (+set txAdminPort 40121)."
@@ -141,4 +211,3 @@ else
     echo "cd \"$SERVER_DIR/server-data\" && bash \"$SERVER_DIR/server/run.sh\" +exec server.cfg"
   fi
 fi
-
