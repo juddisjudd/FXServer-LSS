@@ -146,16 +146,12 @@ if gum confirm "Would you like to configure MariaDB for your FXServer?"; then
     DB_USER=$(gum input --placeholder "Enter database user (e.g., fxserver)")
     DB_PASS=$(gum input --placeholder "Enter database password" --password)
 
-    # Debug: Show we're checking database
-    echo "DEBUG: Checking for existing database and user..."
+    # Check if database exists using a more reliable method
+    echo "Checking database status..."
+    DB_COUNT=$(sudo mysql -N -e "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name = '${DB_NAME}';" || true)
+    USER_COUNT=$(sudo mysql -N -e "SELECT COUNT(*) FROM mysql.user WHERE user = '${DB_USER}';" || true)
     
-    # Check if database already exists - use exact match and take first line only
-    DB_EXISTS=$(sudo mysql -N -e "SHOW DATABASES LIKE '${DB_NAME}';" | head -n1 || true)
-    USER_EXISTS=$(sudo mysql -N -e "SELECT User FROM mysql.user WHERE User='${DB_USER}' LIMIT 1;" | head -n1 || true)
-    
-    echo "DEBUG: DB_EXISTS='${DB_EXISTS}', USER_EXISTS='${USER_EXISTS}'"
-    
-    if [ -n "${DB_EXISTS}" ]; then
+    if [ "$DB_COUNT" -gt "0" ]; then
         echo "Database '${DB_NAME}' already exists."
         if gum confirm "Would you like to recreate the database? (This will delete all existing data)"; then
             echo "Dropping and recreating database..."
@@ -183,7 +179,7 @@ if gum confirm "Would you like to configure MariaDB for your FXServer?"; then
         fi
     fi
 
-    if [ -n "${USER_EXISTS}" ]; then
+    if [ "$USER_COUNT" -gt "0" ]; then
         echo "User '${DB_USER}' already exists."
         if gum confirm "Would you like to reset the user's password?"; then
             echo "Updating user password..."
