@@ -46,31 +46,146 @@ setup_mariadb() {
     DB_NAME=$(gum input --placeholder "Enter database name (e.g., fxserver)" --value "fxserver")
     DB_USER=$(gum input --placeholder "Enter database user (e.g., fxserver)" --value "fxserver")
   fi
+
+  # Check MariaDB installation status
+  local MARIADB_INSTALLED=false
+  local MARIADB_RUNNING=false
+  local MARIADB_ACCESSIBLE=false
   
-  # Generate user password
-  DB_USER_PASSWORD=$(openssl rand -base64 16)
-  
-  # Check if MariaDB is already installed
   if dpkg -l | grep -q "^ii.*mariadb-server"; then
+    MARIADB_INSTALLED=true
+    if systemctl is-active --quiet mariadb; then
+      MARIADB_RUNNING=true
+      # Try to connect without password (in case of fresh install)
+      if mysql -u root -e "SELECT 1" &>/dev/null; then
+        MARIADB_ACCESSIBLE=true
+      fi
+    fi
+  fi
+
+  # Handle different scenarios
+  if [ "$MARIADB_INSTALLED" = true ]; then
     echo "MariaDB is already installed"
     
-    # For existing installation, prompt for root password
-    while true; do
-      DB_ROOT_PASSWORD=$(gum input --password --placeholder "Enter existing MariaDB root password")
-      if mysql -uroot -p"$DB_ROOT_PASSWORD" -e "SELECT 1" &>/dev/null; then
-        echo "Successfully authenticated with MariaDB"
-        break
-      else
-        echo "Invalid password. Please try again."
-      fi
-    done
+    if [ "$MARIADB_RUNNING" = false ]; then
+      echo "Starting MariaDB service..."
+      sudo systemctl start mariadb
+      sudo systemctl enable mariadb
+      sleep 5  # Give it time to start
+    fi
+
+    # Prompt for action if MariaDB is already installed
+    local DB_ACTION=$(gum choose \
+      "Use existing credentials" \
+      "Create new database user" \
+      "Reset root password" \
+      "Reinstall MariaDB")
+
+    case "$DB_ACTION" in
+      "Use existing credentials")
+        while true; do
+          DB_ROOT_PASSWORD=$(gum input --password --placeholder "Enter existing MariaDB root password")
+          if mysql -uroot -p"$DB_ROOT_PASSWORD" -e "SELECT 1" &>/dev/null; then
+            echo "Successfully authenticated with MariaDB"
+            break
+          else
+            echo "Invalid password. Please try again."
+            if ! gum confirm "Try again?"; then
+              echo "Aborting setup"
+              exit 1
+            fi
+          fi
+        done
+        ;;
+
+      "Create new database user")
+        while true; do
+          DB_ROOT_PASSWORD=$(gum input --password --placeholder "Enter existing MariaDB root password")
+          if mysql -uroot -p"$DB_ROOT_PASSWORD" -e "SELECT 1" &>/dev/null; then
+            echo "Successfully authenticated with MariaDB"
+            # Generate or prompt for new user password
+            if gum confirm "Generate random password for new database user?"; then
+              DB_USER_PASSWORD=$(openssl rand -base64 16)
+            else
+              DB_USER_PASSWORD=$(gum input --password --placeholder "Enter password for new database user")
+            fi
+            break
+          else
+            echo "Invalid password. Please try again."
+            if ! gum confirm "Try again?"; then
+              echo "Aborting setup"
+              exit 1
+            fi
+          fi
+        done
+        ;;
+
+      "Reset root password")
+        echo "Stopping MariaDB..."
+        sudo systemctl stop mariadb
+
+        echo "Starting MariaDB in safe mode..."
+        sudo mysqld_safe --skip-grant-tables --skip-networking &
+        sleep 10
+
+        echo "Resetting root password..."
+        DB_ROOT_PASSWORD=$(openssl rand -base64 16)
+        sudo mysql -e "
+          FLUSH PRIVILEGES;
+          ALTER USER 'root'@'localhost' IDENTIFIED BY '$DB_ROOT_PASSWORD';
+          FLUSH PRIVILEGES;
+        "
+
+        echo "Stopping safe mode..."
+        sudo pkill mysqld
+        sleep 5
+
+        echo "Restarting MariaDB normally..."
+        sudo systemctl start mariadb
+        sleep 5
+        ;;
+
+      "Reinstall MariaDB")
+        echo "Stopping MariaDB..."
+        sudo systemctl stop mariadb
+
+        echo "Removing existing MariaDB installation..."
+        sudo apt-get purge mariadb-server mariadb-client mariadb-common -y
+        sudo rm -rf /var/lib/mysql
+        sudo rm -rf /etc/mysql
+        sudo rm -rf /var/log/mysql
+        sudo apt-get autoremove -y
+        
+        echo "Installing fresh copy of MariaDB..."
+        sudo DEBIAN_FRONTEND=noninteractive apt-get update
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y mariadb-server
+        
+        # Generate new root password
+        DB_ROOT_PASSWORD=$(openssl rand -base64 16)
+        
+        # Start and secure MariaDB
+        sudo systemctl start mariadb
+        sudo systemctl enable mariadb
+        
+        echo "Securing new installation..."
+        sudo mysql -e "
+          ALTER USER 'root'@'localhost' IDENTIFIED BY '$DB_ROOT_PASSWORD';
+          DELETE FROM mysql.user WHERE User='';
+          DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');
+          DROP DATABASE IF EXISTS test;
+          DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';
+          FLUSH PRIVILEGES;
+        "
+        ;;
+    esac
   else
     echo "Installing MariaDB..."
     sudo DEBIAN_FRONTEND=noninteractive apt-get update
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y mariadb-server
     
-    # Generate root password for fresh install
+    # Generate passwords for fresh install
     DB_ROOT_PASSWORD=$(openssl rand -base64 16)
+    DB_USER_PASSWORD=$(openssl rand -base64 16)
     
     # Start MariaDB service
     sudo systemctl start mariadb
@@ -85,11 +200,9 @@ setup_mariadb() {
       sleep 1
     done
     
-    # Set root password for fresh installation
-    sudo mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$DB_ROOT_PASSWORD';"
-    
-    # Secure the installation
-    mysql -uroot -p"$DB_ROOT_PASSWORD" -e "
+    # Secure the fresh installation
+    sudo mysql -e "
+      ALTER USER 'root'@'localhost' IDENTIFIED BY '$DB_ROOT_PASSWORD';
       DELETE FROM mysql.user WHERE User='';
       DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');
       DROP DATABASE IF EXISTS test;
@@ -98,8 +211,8 @@ setup_mariadb() {
     "
   fi
   
-  # Create database and user for FXServer
-  echo "Creating database and user..."
+  # Create/update database and user for FXServer
+  echo "Setting up database and user..."
   mysql -uroot -p"$DB_ROOT_PASSWORD" -e "
     CREATE DATABASE IF NOT EXISTS \`$DB_NAME\` CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
     CREATE USER IF NOT EXISTS '$DB_USER'@'localhost' IDENTIFIED BY '$DB_USER_PASSWORD';
@@ -107,7 +220,7 @@ setup_mariadb() {
     FLUSH PRIVILEGES;
   "
   
-  # Export variables to be used by other parts of the script
+  # Export variables
   export DB_NAME DB_USER DB_USER_PASSWORD
   
   # Verify database access
@@ -117,7 +230,7 @@ setup_mariadb() {
     exit 1
   fi
   
-  # Display the credentials to the user
+  # Display the credentials
   echo
   gum style \
     --border double \
