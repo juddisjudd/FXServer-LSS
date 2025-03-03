@@ -1,6 +1,8 @@
 # FXServer-LSS
 This repository contains a shell script (`fxserver-setup.sh`) that automates the setup of a vanilla FXServer (FiveM) on Linux. The script uses gum for interactive prompts and automatically retrieves the latest FXServer build from FiveM’s changelog API. It also offers an option to enable txAdmin mode (running FXServer in a detached screen session) for advanced server management.
 
+https://github.com/user-attachments/assets/5adb13c8-5bbd-4a4e-96fd-ac856ce12321
+
 ## Features
 - **Interactive Setup:** Uses gum for user-friendly input prompts.
 - **Automatic Build Retrieval:** Fetches the latest FXServer build URL from FiveM’s changelog API.
